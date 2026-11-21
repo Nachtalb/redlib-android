@@ -13,6 +13,7 @@ import android.graphics.Insets
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.Parcel
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -20,6 +21,7 @@ import android.view.ViewGroup
 import android.view.WindowInsets
 import android.webkit.URLUtil
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -136,6 +138,12 @@ class MainActivity : Activity() {
                 progress.visibility = View.GONE
                 view.evaluateJavascript(SHARE_FUNCTION, null)
             }
+
+            // The server was restarted and isn't listening yet: load again once it is.
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (!request.isForMainFrame || request.url.authority != Redlib.AUTHORITY || error.errorCode != ERROR_CONNECT) return
+                open(started = true) { view.reload() }
+            }
         }
         web.webChromeClient = object : WebChromeClient() {
             override fun onShowCustomView(view: View, callback: CustomViewCallback) {
@@ -162,18 +170,27 @@ class MainActivity : Activity() {
             // Elsewhere the long press goes on to select text.
             web.hitTestResult.type !in setOf(WebView.HitTestResult.UNKNOWN_TYPE, WebView.HitTestResult.EDIT_TEXT_TYPE)
         }
-        open(page(intent))
+        // After Android discarded the app in the background, its pages come back where they were.
+        if (state == null) open { web.loadUrl(page(intent)) } else open { web.restoreState(state) ?: web.loadUrl(page(intent)) }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        open(page(intent))
+        open { web.loadUrl(page(intent)) }
     }
 
     override fun onResume() {
         super.onResume()
-        // Android may have killed the server while the app was in the background.
-        web.url?.let { if (Redlib.start(this)) open(it, started = true) }
+        // Android may have killed the server in the background. The page on screen stays as it is.
+        Redlib.start(this)
+    }
+
+    override fun onSaveInstanceState(state: Bundle) {
+        super.onSaveInstanceState(state)
+        val pages = Bundle().also { web.saveState(it) }
+        val size = Parcel.obtain().run { writeBundle(pages); dataSize().also { recycle() } }
+        // Android crashes an app whose saved state is too large.
+        if (size < 200_000) state.putAll(pages)
     }
 
     override fun onDestroy() {
@@ -227,14 +244,15 @@ class MainActivity : Activity() {
     /** The local address for the link the app was opened with, the front page without one. */
     private fun page(intent: Intent?) = Redlib.BASE + Links.page(intent?.data?.encodedPath, intent?.data?.encodedQuery)
 
-    private fun open(url: String, started: Boolean = Redlib.start(this)) {
+    /** Runs `load` once the server answers, starting it if needed. */
+    private fun open(started: Boolean = Redlib.start(this), load: () -> Unit) {
         error.visibility = View.GONE
         progress.visibility = if (started) View.VISIBLE else View.GONE
-        if (!started) return web.loadUrl(url)
+        if (!started) return load()
         thread {
             val ready = Redlib.awaitReady()
             runOnUiThread {
-                if (ready) return@runOnUiThread web.loadUrl(url)
+                if (ready) return@runOnUiThread load()
                 progress.visibility = View.GONE
                 error.text = "Redlib did not start.\n\n" + Redlib.log(this).takeIf { it.exists() }?.readText().orEmpty().takeLast(4000)
                 error.visibility = View.VISIBLE
