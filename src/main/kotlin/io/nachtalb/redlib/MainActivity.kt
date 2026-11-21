@@ -114,6 +114,11 @@ class MainActivity : Activity() {
                 // Media stays in its page: on its own it would replace the Redlib interface.
                 return url.authority != Redlib.AUTHORITY || Links.isMedia(url.path.orEmpty())
             }
+
+            // The spinner from startup stays until the page shows something.
+            override fun onPageCommitVisible(view: WebView, url: String) {
+                progress.visibility = View.GONE
+            }
         }
         web.webChromeClient = object : WebChromeClient() {
             override fun onShowCustomView(view: View, callback: CustomViewCallback) {
@@ -202,8 +207,8 @@ class MainActivity : Activity() {
         thread {
             val ready = Redlib.awaitReady()
             runOnUiThread {
-                progress.visibility = View.GONE
                 if (ready) return@runOnUiThread web.loadUrl(url)
+                progress.visibility = View.GONE
                 error.text = "Redlib did not start.\n\n" + Redlib.log(this).takeIf { it.exists() }?.readText().orEmpty().takeLast(4000)
                 error.visibility = View.VISIBLE
             }
