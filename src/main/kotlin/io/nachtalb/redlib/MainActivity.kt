@@ -81,6 +81,15 @@ object Redlib {
     }
 }
 
+/** The address scheme a page's share request reaches the app with. */
+private const val SHARE = "redlib-share"
+
+/** A WebView has no `navigator.share`. This one hands what a page shares to the app, which opens Android's share sheet. */
+private const val SHARE_FUNCTION = """navigator.share = navigator.share || function (data) {
+    location.href = "$SHARE:?url=" + encodeURIComponent(data.url || data.text || "") + "&title=" + encodeURIComponent(data.title || "");
+    return Promise.resolve();
+};"""
+
 class MainActivity : Activity() {
     private lateinit var root: FrameLayout
     private lateinit var web: WebView
@@ -114,7 +123,10 @@ class MainActivity : Activity() {
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
-                if (url.authority != Redlib.AUTHORITY) openOutside(url)
+                if (url.scheme == SHARE) {
+                    val text = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url.getQueryParameter("url")).putExtra(Intent.EXTRA_SUBJECT, url.getQueryParameter("title"))
+                    startActivity(Intent.createChooser(text, null))
+                } else if (url.authority != Redlib.AUTHORITY) openOutside(url)
                 // Media stays in its page: on its own it would replace the Redlib interface.
                 return url.authority != Redlib.AUTHORITY || Links.isMedia(url.path.orEmpty())
             }
@@ -122,6 +134,7 @@ class MainActivity : Activity() {
             // The spinner from startup stays until the page shows something.
             override fun onPageCommitVisible(view: WebView, url: String) {
                 progress.visibility = View.GONE
+                view.evaluateJavascript(SHARE_FUNCTION, null)
             }
         }
         web.webChromeClient = object : WebChromeClient() {
