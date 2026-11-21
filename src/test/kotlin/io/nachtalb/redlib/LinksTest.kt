@@ -30,6 +30,14 @@ class LinksTest {
         assertEquals("https://i.redd.it/a.jpg", Links.origin("/img/a.jpg"))
         assertEquals("https://preview.redd.it/a.jpg?width=640&s=x", Links.origin("/preview/pre/a.jpg?width=640&s=x"))
         assertEquals("https://external-preview.redd.it/a.jpg", Links.origin("/preview/external-pre/a.jpg"))
-        assertNull(Links.origin("/vid/abc/CMAF/720.mp4"))
+        assertEquals("https://v.redd.it/abc/CMAF_720.mp4", Links.origin("/vid/abc/CMAF/720.mp4"))
+        assertNull(Links.origin("/thumb/a/b.jpg"))
+    }
+
+    @Test
+    fun public() {
+        assertEquals("https://www.reddit.com/r/rust/comments/abc/t/?sort=new", Links.public("/r/rust/comments/abc/t/?sort=new"))
+        assertEquals("https://i.redd.it/a.jpg", Links.public("/img/a.jpg"))
+        assertNull(Links.public("/thumb/a/b.jpg"))
     }
 }

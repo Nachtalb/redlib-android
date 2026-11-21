@@ -1,7 +1,10 @@
 package io.nachtalb.redlib
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -9,8 +12,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
-import android.view.ContextMenu
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowInsets
 import android.webkit.URLUtil
@@ -23,9 +26,11 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import java.io.File
+import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlin.concurrent.thread
+import org.json.JSONObject
 
 /** The Redlib server, one per app process. */
 object Redlib {
@@ -75,6 +80,9 @@ class MainActivity : Activity() {
     private lateinit var error: TextView
     private var fullscreen: View? = null
 
+    /** Where the last touch began, as fractions of the page view. */
+    private var touch = 0f to 0f
+
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         web = WebView(this)
@@ -97,11 +105,9 @@ class MainActivity : Activity() {
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
-                val local = url.authority == Redlib.AUTHORITY
-                if (local && !Links.isMedia(url.path.orEmpty())) return false
-                val path = url.encodedPath.orEmpty() + (url.encodedQuery?.let { "?$it" } ?: "")
-                openOutside(if (local) Links.origin(path)?.let(Uri::parse) ?: url else url)
-                return true
+                if (url.authority != Redlib.AUTHORITY) openOutside(url)
+                // Media stays in its page: on its own it would replace the Redlib interface.
+                return url.authority != Redlib.AUTHORITY || Links.isMedia(url.path.orEmpty())
             }
         }
         web.webChromeClient = object : WebChromeClient() {
@@ -119,8 +125,16 @@ class MainActivity : Activity() {
                 window.insetsController?.show(WindowInsets.Type.systemBars())
             }
         }
-        web.setDownloadListener { url, _, disposition, mime, _ -> save(url, URLUtil.guessFileName(url, disposition, mime)) }
-        registerForContextMenu(web)
+        web.setDownloadListener { url, _, _, _, _ -> save(url) }
+        web.setOnTouchListener { _, event ->
+            if (event.actionMasked == MotionEvent.ACTION_DOWN) touch = event.x / web.width to event.y / web.height
+            false
+        }
+        web.setOnLongClickListener {
+            web.evaluateJavascript("${Links.AT_POINT}(${touch.first}, ${touch.second})") { if (it != "null") menu(JSONObject(it)) }
+            // Elsewhere the long press goes on to select text.
+            web.hitTestResult.type !in setOf(WebView.HitTestResult.UNKNOWN_TYPE, WebView.HitTestResult.EDIT_TEXT_TYPE)
+        }
         open(page(intent))
     }
 
@@ -149,16 +163,29 @@ class MainActivity : Activity() {
         }
     }
 
-    override fun onCreateContextMenu(menu: ContextMenu, view: View, info: ContextMenu.ContextMenuInfo?) {
-        val hit = web.hitTestResult
-        val url = hit.extra ?: return
-        if (hit.type == WebView.HitTestResult.IMAGE_TYPE || hit.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE) {
-            menu.add("Save image").setOnMenuItemClickListener {
-                save(url, URLUtil.guessFileName(url, null, null))
-                true
-            }
+    /** The long-press menu for the link, image and video `found` under the finger. */
+    private fun menu(found: JSONObject) {
+        fun address(key: String) = if (found.isNull(key)) null else Uri.parse(found.getString(key)).takeIf { it.scheme == "http" || it.scheme == "https" }
+        fun local(uri: Uri) = uri.authority == Redlib.AUTHORITY
+        fun public(uri: Uri) = if (local(uri)) Links.public(Links.page(uri.encodedPath, uri.encodedQuery)) else "$uri"
+        val items = mutableListOf<Pair<String, () -> Unit>>()
+        // An image's link to itself is the image, not a link.
+        address("link")?.takeUnless { local(it) && Links.isMedia(it.path.orEmpty()) }?.let(::public)?.let { url ->
+            items += "Open in browser" to { openOutside(Uri.parse(url)) }
+            items += "Copy link" to { copy(url) }
+            items += "Share link" to { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url), null)) }
         }
+        (address("image")?.let { "image" to it } ?: address("video")?.let { "video" to it })?.let { (kind, uri) ->
+            items += "Save $kind" to { save("$uri") }
+            items += "Share $kind" to { share("$uri") }
+            public(uri)?.let { url -> items += "Copy $kind link" to { copy(url) } }
+        }
+        if (items.isNotEmpty()) AlertDialog.Builder(this).setItems(items.map { it.first }.toTypedArray()) { _, item -> items[item].second() }.show()
     }
+
+    private fun copy(text: String) = getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(null, text))
+
+    private fun toast(text: String) = runOnUiThread { Toast.makeText(this, text, Toast.LENGTH_SHORT).show() }
 
     /** The local address for the link the app was opened with, the front page without one. */
     private fun page(intent: Intent?) = Redlib.BASE + Links.page(intent?.data?.encodedPath, intent?.data?.encodedQuery)
@@ -194,22 +221,47 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Saves what the local server sends for `url` to the Downloads folder. */
-    private fun save(url: String, name: String) {
+    /** Fetches `url` into the stream `sink` opens for its file name and type. */
+    private fun fetch(url: String, sink: (name: String, type: String?) -> OutputStream) {
+        val connection = URL(url).openConnection()
+        val type = connection.contentType?.substringBefore(';')
+        val name = URLUtil.guessFileName(url, connection.getHeaderField("Content-Disposition"), type)
+        connection.getInputStream().use { input -> sink(name, type).use { input.copyTo(it) } }
+    }
+
+    /** Saves what `url` serves to the Downloads folder. */
+    private fun save(url: String) {
         thread {
-            val saved = try {
-                val connection = URL(url).openConnection()
-                val values = ContentValues().apply {
-                    put(MediaStore.Downloads.DISPLAY_NAME, name)
-                    connection.contentType?.substringBefore(';')?.let { put(MediaStore.Downloads.MIME_TYPE, it) }
+            try {
+                fetch(url) { name, type ->
+                    val values = ContentValues().apply {
+                        put(MediaStore.Downloads.DISPLAY_NAME, name)
+                        type?.let { put(MediaStore.Downloads.MIME_TYPE, it) }
+                    }
+                    contentResolver.openOutputStream(contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)!!)!!
                 }
-                val target = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)!!
-                connection.getInputStream().use { input -> contentResolver.openOutputStream(target)!!.use { input.copyTo(it) } }
-                true
+                toast("Saved to Downloads")
             } catch (_: Exception) {
-                false
+                toast("Could not save")
             }
-            runOnUiThread { Toast.makeText(this, if (saved) "Saved to Downloads" else "Could not save", Toast.LENGTH_SHORT).show() }
+        }
+    }
+
+    /** Shares what `url` serves as a file. */
+    private fun share(url: String) {
+        thread {
+            try {
+                val dir = SharedFiles.dir(this).apply { deleteRecursively(); mkdirs() }
+                val send = Intent(Intent.ACTION_SEND).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                fetch(url) { name, type ->
+                    val file = File(dir, name)
+                    send.setType(type ?: "*/*").putExtra(Intent.EXTRA_STREAM, SharedFiles.uri(file))
+                    file.outputStream()
+                }
+                runOnUiThread { startActivity(Intent.createChooser(send, null)) }
+            } catch (_: Exception) {
+                toast("Could not share")
+            }
         }
     }
 }

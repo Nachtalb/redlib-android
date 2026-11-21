@@ -41,5 +41,10 @@
                 <data android:host="redd.it" />
             </intent-filter>
         </activity>
+        <provider
+            android:name=".SharedFiles"
+            android:authorities="io.nachtalb.redlib.share"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>
