@@ -48,6 +48,11 @@ object Redlib {
             .directory(context.filesDir)
             .redirectErrorStream(true)
             .redirectOutput(log(context))
+            .apply {
+                // Defaults for a single user's own phone. What the user sets in Redlib's settings wins.
+                listOf("DEFAULT_USE_HLS", "DEFAULT_SHOW_NSFW", "DEFAULT_BLUR_NSFW", "DEFAULT_CLEAN_URLS", "ENABLE_GIPHY", "ENABLE_REDGIFS")
+                    .forEach { environment()["REDLIB_$it"] = "on" }
+            }
             .start()
         return true
     }
