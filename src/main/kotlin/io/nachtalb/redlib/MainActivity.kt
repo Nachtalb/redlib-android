@@ -83,6 +83,9 @@ object Redlib {
     }
 }
 
+/** The file holding the WebView's history and scroll positions between runs. */
+private const val PAGES = "pages"
+
 /** The address scheme a page's share request reaches the app with. */
 private const val SHARE = "redlib-share"
 
@@ -170,13 +173,15 @@ class MainActivity : Activity() {
             // Elsewhere the long press goes on to select text.
             web.hitTestResult.type !in setOf(WebView.HitTestResult.UNKNOWN_TYPE, WebView.HitTestResult.EDIT_TEXT_TYPE)
         }
-        // After Android discarded the app in the background, its pages come back where they were.
-        if (state == null) open { web.loadUrl(page(intent)) } else open { web.restoreState(state) ?: web.loadUrl(page(intent)) }
+        // Opened without a new link, the app comes back with the pages it had, where they were scrolled to.
+        val link = state == null && intent.data != null && intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0
+        open { if (link || pages()?.let(web::restoreState) == null) web.loadUrl(page(intent)) }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        open { web.loadUrl(page(intent)) }
+        // The launcher's intent arrives here too, when the app is only brought back to the front.
+        if (intent.data != null) open { web.loadUrl(page(intent)) }
     }
 
     override fun onResume() {
@@ -185,12 +190,28 @@ class MainActivity : Activity() {
         Redlib.start(this)
     }
 
-    override fun onSaveInstanceState(state: Bundle) {
-        super.onSaveInstanceState(state)
-        val pages = Bundle().also { web.saveState(it) }
-        val size = Parcel.obtain().run { writeBundle(pages); dataSize().also { recycle() } }
-        // Android crashes an app whose saved state is too large.
-        if (size < 200_000) state.putAll(pages)
+    // Kept in a file, not in the state Android saves: that is gone once the app is swiped away.
+    override fun onStop() {
+        super.onStop()
+        val parcel = Parcel.obtain()
+        parcel.writeBundle(Bundle().also { web.saveState(it) })
+        File(filesDir, PAGES).writeBytes(parcel.marshall())
+        parcel.recycle()
+    }
+
+    /** The pages saved when the app was last left, null when there are none or an update made them unreadable. */
+    private fun pages(): Bundle? {
+        val parcel = Parcel.obtain()
+        return try {
+            val saved = File(filesDir, PAGES).readBytes()
+            parcel.unmarshall(saved, 0, saved.size)
+            parcel.setDataPosition(0)
+            parcel.readBundle(classLoader)
+        } catch (_: Exception) {
+            null
+        } finally {
+            parcel.recycle()
+        }
     }
 
     override fun onDestroy() {
