@@ -40,4 +40,10 @@ class LinksTest {
         assertEquals("https://i.redd.it/a.jpg", Links.public("/img/a.jpg"))
         assertNull(Links.public("/thumb/a/b.jpg"))
     }
+
+    @Test
+    fun fileName() {
+        assertEquals("abc.mp4", Links.fileName("/vid/abc/CMAF/720.mp4"))
+        assertNull(Links.fileName("/img/a.jpg"))
+    }
 }

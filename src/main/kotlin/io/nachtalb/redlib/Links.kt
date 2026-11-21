@@ -35,6 +35,9 @@ object Links {
         }
     }
 
+    /** A file name for a media path whose last part doesn't name it: a video's is only its size. */
+    fun fileName(path: String) = path.split('/').takeIf { it.getOrNull(1) == "vid" && it.size == 5 }?.let { "${it[2]}.${it[4].substringAfterLast('.', "mp4")}" }
+
     /** The address to give other people for a Redlib path: the media's own, or the page on Reddit. */
     fun public(path: String) = if (isMedia(path)) origin(path) else "https://www.reddit.com$path"
 }

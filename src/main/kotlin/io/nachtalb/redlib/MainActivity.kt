@@ -2,33 +2,36 @@ package io.nachtalb.redlib
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.app.DownloadManager
 import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Insets
 import android.net.Uri
 import android.os.Bundle
-import android.provider.MediaStore
+import android.os.Environment
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowInsets
 import android.webkit.URLUtil
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.ArrayAdapter
 import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import java.io.File
-import java.io.OutputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.FutureTask
 import kotlin.concurrent.thread
 import org.json.JSONObject
 
@@ -98,8 +101,9 @@ class MainActivity : Activity() {
             addView(progress, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
             addView(error)
             setOnApplyWindowInsetsListener { view, insets ->
-                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.ime())
-                view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+                // Bars another window hides (the share sheet) still keep their room, or the page jumps.
+                val bars = if (fullscreen == null) insets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars()) else Insets.NONE
+                view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, insets.getInsets(WindowInsets.Type.ime()).bottom))
                 insets
             }
         }
@@ -135,7 +139,7 @@ class MainActivity : Activity() {
                 window.insetsController?.show(WindowInsets.Type.systemBars())
             }
         }
-        web.setDownloadListener { url, _, _, _, _ -> save(url) }
+        web.setDownloadListener { url, _, _, _, _ -> save(Uri.parse(url)) }
         web.setOnTouchListener { _, event ->
             if (event.actionMasked == MotionEvent.ACTION_DOWN) touch = event.x / web.width to event.y / web.height
             false
@@ -178,19 +182,29 @@ class MainActivity : Activity() {
         fun address(key: String) = if (found.isNull(key)) null else Uri.parse(found.getString(key)).takeIf { it.scheme == "http" || it.scheme == "https" }
         fun local(uri: Uri) = uri.authority == Redlib.AUTHORITY
         fun public(uri: Uri) = if (local(uri)) Links.public(Links.page(uri.encodedPath, uri.encodedQuery)) else "$uri"
-        val items = mutableListOf<Pair<String, () -> Unit>>()
+        val items = mutableListOf<Triple<String, Int, () -> Unit>>()
         // An image's link to itself is the image, not a link.
         address("link")?.takeUnless { local(it) && Links.isMedia(it.path.orEmpty()) }?.let(::public)?.let { url ->
-            items += "Open in browser" to { openOutside(Uri.parse(url)) }
-            items += "Copy link" to { copy(url) }
-            items += "Share link" to { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url), null)) }
+            items += Triple("Open in browser", R.drawable.ic_open) { openOutside(Uri.parse(url)) }
+            items += Triple("Copy link", R.drawable.ic_copy) { copy(url) }
+            items += Triple("Share link", R.drawable.ic_share) { startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, url), null)) }
         }
         (address("image")?.let { "image" to it } ?: address("video")?.let { "video" to it })?.let { (kind, uri) ->
-            items += "Save $kind" to { save("$uri") }
-            items += "Share $kind" to { share("$uri") }
-            public(uri)?.let { url -> items += "Copy $kind link" to { copy(url) } }
+            // An image is fetched while the menu is open, so sharing it doesn't start with a wait.
+            val file = FutureTask { shareable("$uri") }.also { if (kind == "image") thread { it.run() } }
+            items += Triple("Save $kind", R.drawable.ic_save) { save(uri) }
+            items += Triple("Share $kind", R.drawable.ic_share) { share(file) }
+            public(uri)?.let { url -> items += Triple("Copy $kind link", R.drawable.ic_copy) { copy(url) } }
         }
-        if (items.isNotEmpty()) AlertDialog.Builder(this).setItems(items.map { it.first }.toTypedArray()) { _, item -> items[item].second() }.show()
+        if (items.isEmpty()) return
+        val dialog = AlertDialog.Builder(this)
+        val rows = object : ArrayAdapter<String>(dialog.context, android.R.layout.simple_list_item_1, items.map { it.first }) {
+            override fun getView(position: Int, convert: View?, parent: ViewGroup) = (super.getView(position, convert, parent) as TextView).apply {
+                setCompoundDrawablesRelativeWithIntrinsicBounds(items[position].second, 0, 0, 0)
+                compoundDrawablePadding = (24 * resources.displayMetrics.density).toInt()
+            }
+        }
+        dialog.setAdapter(rows) { _, item -> items[item].third() }.show()
     }
 
     private fun copy(text: String) = getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(null, text))
@@ -231,46 +245,38 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Fetches `url` into the stream `sink` opens for its file name and type. */
-    private fun fetch(url: String, sink: (name: String, type: String?) -> OutputStream) {
+    /** Saves a file of the local server to Downloads through the system's download manager, which notifies when done. */
+    private fun save(uri: Uri) {
+        val name = Links.fileName(uri.path.orEmpty()) ?: URLUtil.guessFileName("$uri", null, null)
+        val request = DownloadManager.Request(uri)
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name)
+        getSystemService(DownloadManager::class.java).enqueue(request)
+    }
+
+    /** Fetches what `url` serves into the share folder and returns the intent sending that file. */
+    private fun shareable(url: String): Intent {
         val connection = URL(url).openConnection()
         val type = connection.contentType?.substringBefore(';')
-        val name = URLUtil.guessFileName(url, connection.getHeaderField("Content-Disposition"), type)
-        connection.getInputStream().use { input -> sink(name, type).use { input.copyTo(it) } }
+        val name = Links.fileName(Uri.parse(url).path.orEmpty()) ?: URLUtil.guessFileName(url, connection.getHeaderField("Content-Disposition"), type)
+        val file = File(SharedFiles.dir(this).apply { deleteRecursively(); mkdirs() }, name)
+        connection.getInputStream().use { input -> file.outputStream().use { input.copyTo(it) } }
+        return Intent(Intent.ACTION_SEND).setType(type ?: "*/*").putExtra(Intent.EXTRA_STREAM, SharedFiles.uri(file)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
 
-    /** Saves what `url` serves to the Downloads folder. */
-    private fun save(url: String) {
+    /** Opens the share sheet for `file`, fetching it first unless that already began. */
+    private fun share(file: FutureTask<Intent>) {
+        progress.visibility = View.VISIBLE
         thread {
-            try {
-                fetch(url) { name, type ->
-                    val values = ContentValues().apply {
-                        put(MediaStore.Downloads.DISPLAY_NAME, name)
-                        type?.let { put(MediaStore.Downloads.MIME_TYPE, it) }
-                    }
-                    contentResolver.openOutputStream(contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)!!)!!
-                }
-                toast("Saved to Downloads")
+            val send = try {
+                file.run()
+                file.get()
             } catch (_: Exception) {
-                toast("Could not save")
+                null
             }
-        }
-    }
-
-    /** Shares what `url` serves as a file. */
-    private fun share(url: String) {
-        thread {
-            try {
-                val dir = SharedFiles.dir(this).apply { deleteRecursively(); mkdirs() }
-                val send = Intent(Intent.ACTION_SEND).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                fetch(url) { name, type ->
-                    val file = File(dir, name)
-                    send.setType(type ?: "*/*").putExtra(Intent.EXTRA_STREAM, SharedFiles.uri(file))
-                    file.outputStream()
-                }
-                runOnUiThread { startActivity(Intent.createChooser(send, null)) }
-            } catch (_: Exception) {
-                toast("Could not share")
+            runOnUiThread {
+                progress.visibility = View.GONE
+                if (send == null) toast("Could not share") else startActivity(Intent.createChooser(send, null))
             }
         }
     }
