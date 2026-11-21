@@ -13,7 +13,7 @@
     </queries>
 
     <application
-        android:icon="@drawable/icon"
+        android:icon="@mipmap/ic_launcher"
         android:label="Redlib"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/App">
