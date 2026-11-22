@@ -49,6 +49,8 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            // Drops what the AndroidX libraries bring along that the app never uses.
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             signingConfig = signingConfigs.getByName("debug")
         }
@@ -60,6 +62,8 @@ android {
 }
 
 dependencies {
+    // Android's own refresh indicator, which the platform has no widget for.
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.2.0")
     testImplementation("junit:junit:4.13.2")
 }
 

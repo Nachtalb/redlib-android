@@ -30,6 +30,7 @@ import android.widget.FrameLayout
 import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -98,6 +99,7 @@ private const val SHARE_FUNCTION = """navigator.share = navigator.share || funct
 class MainActivity : Activity() {
     private lateinit var root: FrameLayout
     private lateinit var web: WebView
+    private lateinit var swipe: SwipeRefreshLayout
     private lateinit var progress: ProgressBar
     private lateinit var error: TextView
     private var fullscreen: View? = null
@@ -105,13 +107,24 @@ class MainActivity : Activity() {
     /** Where the last touch began, as fractions of the page view. */
     private var touch = 0f to 0f
 
+    /** Whether the current touch is something other than a pull: a long press, a text selection or a pinch. */
+    private var held = false
+
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         web = WebView(this)
         progress = ProgressBar(this)
         error = TextView(this).apply { setPadding(48, 48, 48, 48); setTextIsSelectable(true) }
-        root = FrameLayout(this).apply {
+        swipe = SwipeRefreshLayout(this).apply {
             addView(web)
+            setOnRefreshListener { web.reload() }
+            setColorSchemeColors(themeColor(android.R.attr.colorAccent))
+            setProgressBackgroundColorSchemeColor(themeColor(android.R.attr.colorBackgroundFloating))
+            // A pull only starts at the very top of the page, and never from a long press, a pinch or a fullscreen video.
+            setOnChildScrollUpCallback { _, _ -> web.scrollY > 0 || held || fullscreen != null }
+        }
+        root = FrameLayout(this).apply {
+            addView(swipe)
             addView(progress, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
             addView(error)
             setOnApplyWindowInsetsListener { view, insets ->
@@ -139,11 +152,13 @@ class MainActivity : Activity() {
             // The spinner from startup stays until the page shows something.
             override fun onPageCommitVisible(view: WebView, url: String) {
                 progress.visibility = View.GONE
+                swipe.isRefreshing = false
                 view.evaluateJavascript(SHARE_FUNCTION, null)
             }
 
             // The server was restarted and isn't listening yet: load again once it is.
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (request.isForMainFrame) swipe.isRefreshing = false
                 if (!request.isForMainFrame || request.url.authority != Redlib.AUTHORITY || error.errorCode != ERROR_CONNECT) return
                 open(started = true) { view.reload() }
             }
@@ -165,10 +180,17 @@ class MainActivity : Activity() {
         }
         web.setDownloadListener { url, _, _, _, _ -> save(Uri.parse(url)) }
         web.setOnTouchListener { _, event ->
-            if (event.actionMasked == MotionEvent.ACTION_DOWN) touch = event.x / web.width to event.y / web.height
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    touch = event.x / web.width to event.y / web.height
+                    held = false
+                }
+                MotionEvent.ACTION_POINTER_DOWN -> held = true
+            }
             false
         }
         web.setOnLongClickListener {
+            held = true
             web.evaluateJavascript("${Links.AT_POINT}(${touch.first}, ${touch.second})") { if (it != "null") menu(JSONObject(it)) }
             // Elsewhere the long press goes on to select text.
             web.hitTestResult.type !in setOf(WebView.HitTestResult.UNKNOWN_TYPE, WebView.HitTestResult.EDIT_TEXT_TYPE)
@@ -257,6 +279,9 @@ class MainActivity : Activity() {
         }
         dialog.setAdapter(rows) { _, item -> items[item].third() }.show()
     }
+
+    /** A colour of the theme, so it follows light and dark mode and the system's accent. */
+    private fun themeColor(attr: Int) = obtainStyledAttributes(intArrayOf(attr)).run { getColor(0, 0).also { recycle() } }
 
     private fun copy(text: String) = getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(null, text))
 

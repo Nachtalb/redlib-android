@@ -5,6 +5,7 @@
 - Opens `reddit.com` and `redd.it` links, once "Open supported links" is enabled for the app in Android's settings (Apps > Redlib > Open by default).
 - Everything that isn't a Redlib page opens in the browser, such as other sites and "open in Reddit".
 - Long-press a link, image or video to open, copy, share or save it.
+- Pull down at the top of a page to reload it.
 
 Needs Android 11 or newer on ARM (64 or 32 bit).
 
