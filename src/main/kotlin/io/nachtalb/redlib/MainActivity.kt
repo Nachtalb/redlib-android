@@ -91,7 +91,7 @@ private const val SHARE = "redlib-share"
 
 /** A WebView has no `navigator.share`. This one hands what a page shares to the app, which opens Android's share sheet. */
 private const val SHARE_FUNCTION = """navigator.share = navigator.share || function (data) {
-    location.href = "$SHARE:?url=" + encodeURIComponent(data.url || data.text || "") + "&title=" + encodeURIComponent(data.title || "");
+    location.href = "$SHARE://share?url=" + encodeURIComponent(data.url || data.text || "") + "&title=" + encodeURIComponent(data.title || "");
     return Promise.resolve();
 };"""
 
