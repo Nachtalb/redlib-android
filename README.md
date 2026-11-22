@@ -9,6 +9,10 @@
 
 Needs Android 11 or newer on ARM (64 or 32 bit).
 
+## Installing
+
+Download [`redlib-android.apk`](https://github.com/Nachtalb/redlib-android/releases/latest/download/redlib-android.apk) from the [`latest` release](https://github.com/Nachtalb/redlib-android/releases/latest) and open it on the phone. The release is rebuilt on every push to `main`; a newer APK installs over the old one.
+
 ## Building
 
 ```
