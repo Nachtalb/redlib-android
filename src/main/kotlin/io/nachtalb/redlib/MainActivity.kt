@@ -101,6 +101,7 @@ class MainActivity : Activity() {
     private lateinit var web: WebView
     private lateinit var swipe: SwipeRefreshLayout
     private lateinit var progress: ProgressBar
+    private lateinit var bar: ProgressBar
     private lateinit var error: TextView
     private var fullscreen: View? = null
 
@@ -110,10 +111,17 @@ class MainActivity : Activity() {
     /** Whether the current touch is something other than a pull: a long press, a text selection or a pinch. */
     private var held = false
 
+    /** Whether a page loads, as WebChromeClient's progress tells. */
+    private var loading = false
+
+    /** Shows the loading bar, unless the startup spinner already says that something loads. */
+    private val showBar = Runnable { if (progress.visibility != View.VISIBLE && fullscreen == null) bar.visibility = View.VISIBLE }
+
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         web = WebView(this)
         progress = ProgressBar(this)
+        bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply { visibility = View.GONE }
         error = TextView(this).apply { setPadding(48, 48, 48, 48); setTextIsSelectable(true) }
         swipe = SwipeRefreshLayout(this).apply {
             addView(web)
@@ -125,6 +133,8 @@ class MainActivity : Activity() {
         }
         root = FrameLayout(this).apply {
             addView(swipe)
+            // Over the page, so it doesn't move the page when it comes and goes.
+            addView(bar, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, (3 * resources.displayMetrics.density).toInt(), Gravity.TOP))
             addView(progress, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER))
             addView(error)
             setOnApplyWindowInsetsListener { view, insets ->
@@ -158,12 +168,22 @@ class MainActivity : Activity() {
 
             // The server was restarted and isn't listening yet: load again once it is.
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (request.isForMainFrame) swipe.isRefreshing = false
+                if (request.isForMainFrame) loaded()
                 if (!request.isForMainFrame || request.url.authority != Redlib.AUTHORITY || error.errorCode != ERROR_CONNECT) return
                 open(started = true) { view.reload() }
             }
         }
         web.webChromeClient = object : WebChromeClient() {
+            // A load done within 100 ms shows no bar, which would only flash.
+            override fun onProgressChanged(view: WebView, newProgress: Int) {
+                bar.setProgress(newProgress, loading)
+                if (newProgress == 100) loaded()
+                else if (!loading) {
+                    loading = true
+                    bar.postDelayed(showBar, 100)
+                }
+            }
+
             override fun onShowCustomView(view: View, callback: CustomViewCallback) {
                 fullscreen = view
                 root.addView(view)
@@ -278,6 +298,14 @@ class MainActivity : Activity() {
             }
         }
         dialog.setAdapter(rows) { _, item -> items[item].third() }.show()
+    }
+
+    /** Ends what shows that a page loads: the loading bar and the refresh indicator. */
+    private fun loaded() {
+        loading = false
+        bar.removeCallbacks(showBar)
+        bar.visibility = View.GONE
+        swipe.isRefreshing = false
     }
 
     /** A colour of the theme, so it follows light and dark mode and the system's accent. */
