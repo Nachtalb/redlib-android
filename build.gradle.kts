@@ -10,14 +10,16 @@ val redlibLibs = layout.buildDirectory.dir("redlib")
 val fetchRedlib = tasks.register("fetchRedlib") {
     val abis = mapOf("arm64-v8a" to "aarch64-linux-android", "armeabi-v7a" to "armv7-linux-androideabi")
     val dir = redlibLibs
+    // -PredlibDir=<folder with redlib-<target> files> builds with those instead of the latest release.
+    val local = providers.gradleProperty("redlibDir")
+    inputs.property("local", local.orElse(""))
     outputs.dir(dir)
     doLast {
         abis.forEach { (abi, target) ->
             val lib = dir.get().file("$abi/libredlib.so").asFile
             lib.parentFile.mkdirs()
-            URI("https://github.com/Nachtalb/redlib/releases/latest/download/redlib-$target").toURL().openStream().use { input ->
-                lib.outputStream().use { input.copyTo(it) }
-            }
+            val source = local.orNull?.let { File(it, "redlib-$target").toURI() } ?: URI("https://github.com/Nachtalb/redlib/releases/latest/download/redlib-$target")
+            source.toURL().openStream().use { input -> lib.outputStream().use { input.copyTo(it) } }
         }
     }
 }

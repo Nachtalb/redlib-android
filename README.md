@@ -14,7 +14,7 @@ Needs Android 11 or newer on ARM (64 or 32 bit).
 ./gradlew assembleRelease   # build/outputs/apk/release/redlib-android-release.apk
 ```
 
-The build downloads Redlib's Android binaries from the [`latest` release](https://github.com/Nachtalb/redlib/releases/latest) of the fork; `./gradlew clean` makes the next build fetch them again.
+The build downloads Redlib's Android binaries from the [`latest` release](https://github.com/Nachtalb/redlib/releases/latest) of the fork; `./gradlew clean` makes the next build fetch them again. To build with other binaries, pass `-PredlibDir=<folder>` holding `redlib-aarch64-linux-android` and `redlib-armv7-linux-androideabi`.
 
 ## License
 
