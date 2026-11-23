@@ -1,8 +1,26 @@
+import java.net.HttpURLConnection
 import java.net.URI
 
 plugins {
     id("com.android.application") version "9.5.1"
 }
+
+/** The app's own version, bumped by hand when the app changes. A new value publishes a release. */
+val appVersion = "0.1"
+
+/** The tag of the Redlib fork's newest release, read from where `releases/latest` redirects to. */
+abstract class LatestRedlib : ValueSource<String, ValueSourceParameters.None> {
+    override fun obtain(): String {
+        val connection = URI("https://github.com/Nachtalb/redlib/releases/latest").toURL().openConnection() as HttpURLConnection
+        connection.instanceFollowRedirects = false
+        return connection.getHeaderField("Location").substringAfterLast("/tag/")
+    }
+}
+
+// -PredlibDir=<folder with redlib-<target> files> builds with those instead of a release.
+val redlibDir = providers.gradleProperty("redlibDir")
+// The CI passes -PredlibVersion so the published version.json names the release it built with.
+val redlibVersion = if (redlibDir.isPresent) "local" else providers.gradleProperty("redlibVersion").orElse(providers.of(LatestRedlib::class) {}).get()
 
 // Redlib's Android binaries, packaged as native libraries: Android only lets an app execute files
 // from its native library directory.
@@ -10,15 +28,16 @@ val redlibLibs = layout.buildDirectory.dir("redlib")
 val fetchRedlib = tasks.register("fetchRedlib") {
     val abis = mapOf("arm64-v8a" to "aarch64-linux-android", "armeabi-v7a" to "armv7-linux-androideabi")
     val dir = redlibLibs
-    // -PredlibDir=<folder with redlib-<target> files> builds with those instead of the latest release.
-    val local = providers.gradleProperty("redlibDir")
+    val local = redlibDir
+    val version = redlibVersion
     inputs.property("local", local.orElse(""))
+    inputs.property("version", version)
     outputs.dir(dir)
     doLast {
         abis.forEach { (abi, target) ->
             val lib = dir.get().file("$abi/libredlib.so").asFile
             lib.parentFile.mkdirs()
-            val source = local.orNull?.let { File(it, "redlib-$target").toURI() } ?: URI("https://github.com/Nachtalb/redlib/releases/latest/download/redlib-$target")
+            val source = local.orNull?.let { File(it, "redlib-$target").toURI() } ?: URI("https://github.com/Nachtalb/redlib/releases/download/$version/redlib-$target")
             source.toURL().openStream().use { input -> lib.outputStream().use { input.copyTo(it) } }
         }
     }
@@ -32,8 +51,9 @@ android {
         applicationId = "io.nachtalb.redlib"
         minSdk = 30
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        // Raised by the CI with every published build, so an installed app knows a newer one.
+        versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 1
+        versionName = "$appVersion-$redlibVersion"
     }
 
     signingConfigs {
