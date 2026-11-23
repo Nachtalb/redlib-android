@@ -26,6 +26,15 @@ class LinksTest {
     }
 
     @Test
+    fun listening() {
+        assertFalse(Links.listening(""))
+        assertFalse(Links.listening("Starting Redlib...\n"))
+        assertTrue(Links.listening("Starting Redlib...\nRunning Redlib 2026.1123.1 on 127.0.0.1:38080!\n"))
+        // Another app holds the port.
+        assertFalse(Links.listening("Starting Redlib...\nRunning Redlib v0.36.0 on 127.0.0.1:38080!\nServer error: Address already in use (os error 98)\n"))
+    }
+
+    @Test
     fun media() {
         assertTrue(Links.isMedia("/img/a.jpg"))
         assertTrue(Links.isMedia("/preview/pre/a.jpg"))

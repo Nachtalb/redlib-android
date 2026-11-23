@@ -27,6 +27,9 @@ object Links {
      */
     fun fromOutside(path: String?, query: String?) = if (path.orEmpty().startsWith("/settings/")) "/settings" else page(path, query)
 
+    /** Whether the server's log says it is listening: it names its address right before it binds, and reports failing to. */
+    fun listening(log: String) = "Running Redlib" in log && "Server error" !in log
+
     /** Whether a Redlib path is proxied media rather than a page. */
     fun isMedia(path: String) = path.split('/').getOrNull(1) in media
 
