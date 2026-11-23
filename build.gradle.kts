@@ -1,5 +1,6 @@
 import java.net.HttpURLConnection
 import java.net.URI
+import java.security.MessageDigest
 
 plugins {
     id("com.android.application") version "9.5.1"
@@ -34,11 +35,21 @@ val fetchRedlib = tasks.register("fetchRedlib") {
     inputs.property("version", version)
     outputs.dir(dir)
     doLast {
+        // A release lists the SHA-256 of its files. A download that doesn't match isn't packaged.
+        val sums = if (local.isPresent) null else URI("https://github.com/Nachtalb/redlib/releases/download/$version/SHA256SUMS").toURL().readText()
         abis.forEach { (abi, target) ->
             val lib = dir.get().file("$abi/libredlib.so").asFile
             lib.parentFile.mkdirs()
             val source = local.orNull?.let { File(it, "redlib-$target").toURI() } ?: URI("https://github.com/Nachtalb/redlib/releases/download/$version/redlib-$target")
             source.toURL().openStream().use { input -> lib.outputStream().use { input.copyTo(it) } }
+            if (sums != null) {
+                val listed = sums.lineSequence().map { it.trim().split(Regex("\\s+")) }.firstOrNull { it.getOrNull(1) == "redlib-$target" }?.first()
+                val actual = MessageDigest.getInstance("SHA-256").digest(lib.readBytes()).joinToString("") { "%02x".format(it) }
+                if (actual != listed) {
+                    lib.delete()
+                    throw GradleException("redlib-$target of $version has SHA-256 $actual, its release lists $listed")
+                }
+            }
         }
     }
 }
