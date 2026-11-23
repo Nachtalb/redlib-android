@@ -2,7 +2,9 @@ package io.nachtalb.redlib
 
 import android.content.pm.PackageInstaller
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class UpdateTest {
@@ -37,5 +39,15 @@ class UpdateTest {
         assertEquals(Update.Failure.UserCancelled, Update.failure(aborted, "INSTALL_FAILED_ABORTED", false))
         assertEquals(Update.Failure.UserCancelled, Update.failure(aborted, "INSTALL_FAILED_ABORTED: User rejected permissions", true))
         assertEquals(Update.Failure.Other, Update.failure(PackageInstaller.STATUS_FAILURE_CONFLICT, "INSTALL_FAILED_UPDATE_INCOMPATIBLE", true))
+    }
+
+    @Test
+    fun trusted() {
+        assertTrue(Update.trusted("a1", "a1"))
+        assertFalse(Update.trusted("a1", "b2"))
+        // No secret in the intent, and none stored because no install was started.
+        assertFalse(Update.trusted(null, "a1"))
+        assertFalse(Update.trusted("a1", null))
+        assertFalse(Update.trusted(null, null))
     }
 }
