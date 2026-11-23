@@ -3,7 +3,6 @@ package io.nachtalb.redlib
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.DownloadManager
-import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -352,10 +351,14 @@ class MainActivity : Activity() {
             val preferred = packageManager.resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
             val browsers = packageManager.queryIntentActivities(probe, PackageManager.MATCH_ALL).map { it.activityInfo.packageName }
             intent.setPackage(preferred?.takeIf { it in browsers && it != packageName } ?: browsers.firstOrNull { it != packageName })
+        } else {
+            // Like a browser: only what an app offers to links on web pages.
+            intent.addCategory(Intent.CATEGORY_BROWSABLE)
         }
         try {
             startActivity(intent)
-        } catch (_: ActivityNotFoundException) {
+        } catch (_: Exception) {
+            // No app for it, or an address Android refuses to hand on, such as file:.
             Toast.makeText(this, "No app opens this link", Toast.LENGTH_SHORT).show()
         }
     }
