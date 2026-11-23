@@ -104,6 +104,7 @@ class MainActivity : Activity() {
     private lateinit var bar: ProgressBar
     private lateinit var error: TextView
     private var fullscreen: View? = null
+    private lateinit var updater: Updater
 
     /** Where the last touch began, as fractions of the page view. */
     private var touch = 0f to 0f
@@ -145,6 +146,7 @@ class MainActivity : Activity() {
             }
         }
         setContentView(root)
+        updater = Updater(this)
 
         web.settings.javaScriptEnabled = true
         web.settings.domStorageEnabled = true
@@ -222,6 +224,7 @@ class MainActivity : Activity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.action == Updater.STATUS) return updater.status(intent)
         // The launcher's intent arrives here too, when the app is only brought back to the front.
         if (intent.data != null) open { web.loadUrl(page(intent)) }
     }
@@ -230,6 +233,12 @@ class MainActivity : Activity() {
         super.onResume()
         // Android may have killed the server in the background. The page on screen stays as it is.
         Redlib.start(this)
+        updater.resume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        updater.pause()
     }
 
     // Kept in a file, not in the state Android saves: that is gone once the app is swiped away.
@@ -258,6 +267,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        updater.destroy()
         if (isFinishing) Redlib.stop()
     }
 
