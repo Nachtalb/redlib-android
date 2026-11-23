@@ -63,8 +63,11 @@ jobs:
         env:
           KEYSTORE: ${{ secrets.RELEASE_KEYSTORE }}
         run: base64 -d <<< "$KEYSTORE" > "$RUNNER_TEMP/release.keystore"
-      - run: ./gradlew testDebugUnitTest assembleRelease -PredlibVersion=${{ needs.version.outputs.redlib }} -PversionCode=${{ needs.version.outputs.code }}
+      # The versions come through the environment, so a tag name is never read as part of the command.
+      - run: ./gradlew testDebugUnitTest assembleRelease -PredlibVersion="$REDLIB" -PversionCode="$CODE"
         env:
+          REDLIB: ${{ needs.version.outputs.redlib }}
+          CODE: ${{ needs.version.outputs.code }}
           REDLIB_KEYSTORE: ${{ runner.temp }}/release.keystore
           REDLIB_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
       - name: Publish a release of this version
