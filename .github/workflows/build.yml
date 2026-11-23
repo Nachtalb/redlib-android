@@ -59,7 +59,14 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: gradle
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.RELEASE_KEYSTORE }}
+        run: base64 -d <<< "$KEYSTORE" > "$RUNNER_TEMP/release.keystore"
       - run: ./gradlew testDebugUnitTest assembleRelease -PredlibVersion=${{ needs.version.outputs.redlib }} -PversionCode=${{ needs.version.outputs.code }}
+        env:
+          REDLIB_KEYSTORE: ${{ runner.temp }}/release.keystore
+          REDLIB_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
       - name: Publish a release of this version
         if: needs.version.outputs.publish == 'true'
         env:

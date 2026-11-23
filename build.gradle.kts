@@ -56,13 +56,14 @@ android {
         versionName = "$appVersion-$redlibVersion"
     }
 
+    // The release key stays out of the repo: the CI gets it from the repo's secrets.
+    val keystore = System.getenv("REDLIB_KEYSTORE")
     signingConfigs {
-        // Committed, so every build installs over the last one.
-        getByName("debug") {
-            storeFile = file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        if (keystore != null) create("release") {
+            storeFile = file(keystore)
+            storePassword = System.getenv("REDLIB_KEYSTORE_PASSWORD")
+            keyAlias = "redlib"
+            keyPassword = storePassword
         }
     }
 
@@ -72,7 +73,8 @@ android {
             // Drops what the AndroidX libraries bring along that the app never uses.
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            signingConfig = signingConfigs.getByName("debug")
+            // Without the key a build is signed with this machine's debug key and can't update a published one.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
