@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths-ignore: ['**.md', LICENSE]
-  # Picks up a new Redlib release: builds only when the version it would publish differs.
+  # Picks up a new Redlib release: builds only when its version has no release yet.
   schedule:
     - cron: '17 4 * * *'
   workflow_dispatch:
@@ -38,11 +38,11 @@ jobs:
         run: |
           app=$(sed -n 's/^val appVersion = "\(.*\)"$/\1/p' build.gradle.kts)
           redlib=$(gh api repos/Nachtalb/redlib/releases/latest --jq .tag_name)
-          published=$(gh release download latest -R "$GITHUB_REPOSITORY" -p version.json -O - 2>/dev/null || echo '{}')
+          published=$(curl -sfL "https://github.com/$GITHUB_REPOSITORY/releases/latest/download/version.json" || echo '{}')
           name="$app-$redlib"
           # Installs from before version.json have versionCode 1.
           code=$(( $(jq '.versionCode // 1' <<< "$published") + 1 ))
-          publish=$([ "$name" != "$(jq -r '.versionName // ""' <<< "$published")" ] && echo true || echo false)
+          publish=$(gh release view "$name" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1 && echo false || echo true)
           echo "published: $published, this build: $name ($code), publish: $publish"
           { echo "app=$app"; echo "redlib=$redlib"; echo "name=$name"; echo "code=$code"; echo "publish=$publish"; } >> "$GITHUB_OUTPUT"
 
@@ -60,7 +60,7 @@ jobs:
           java-version: 21
           cache: gradle
       - run: ./gradlew testDebugUnitTest assembleRelease -PredlibVersion=${{ needs.version.outputs.redlib }} -PversionCode=${{ needs.version.outputs.code }}
-      - name: Publish the latest release
+      - name: Publish a release of this version
         if: needs.version.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -74,15 +74,5 @@ jobs:
           cp build/outputs/apk/release/redlib-android-release.apk dist/redlib-android.apk
           jq -n --argjson versionCode "$CODE" --arg versionName "$NAME" --arg app "$APP" --arg redlib "$REDLIB" \
             '{$versionCode, $versionName, $app, $redlib}' > dist/version.json
-          short=${GITHUB_SHA::7}
-          subject=$(git log -1 --format=%s)
-          notes="Built from [\`$short\`]($GITHUB_SERVER_URL/$GH_REPO/commit/$GITHUB_SHA) ($subject) on $(date -u '+%Y-%m-%d %H:%M') UTC, with the Redlib binaries of [$REDLIB](https://github.com/Nachtalb/redlib/releases/tag/$REDLIB).
-
-          Signed with the key in this repository, so it installs over earlier builds. This release is replaced when the app's version is bumped or Redlib has a new release."
-          if gh release view latest > /dev/null 2>&1; then
-            gh api -X PATCH "repos/$GH_REPO/git/refs/tags/latest" -f sha="$GITHUB_SHA" -F force=true
-            gh release upload latest dist/* --clobber
-            gh release edit latest --title "$NAME" --notes "$notes" --latest
-          else
-            gh release create latest dist/* --target "$GITHUB_SHA" --title "$NAME" --notes "$notes" --latest
-          fi
+          gh release create "$NAME" dist/* --target "$GITHUB_SHA" --title "$NAME" --latest --generate-notes \
+            --notes "Bundles Redlib [$REDLIB](https://github.com/Nachtalb/redlib/releases/tag/$REDLIB)."
