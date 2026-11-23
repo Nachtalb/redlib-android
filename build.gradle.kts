@@ -6,7 +6,7 @@ plugins {
 }
 
 /** The app's own version, bumped by hand when the app changes. A new value publishes a release. */
-val appVersion = "0.1"
+val appVersion = "0.2.0"
 
 /** The tag of the Redlib fork's newest release, read from where `releases/latest` redirects to. */
 abstract class LatestRedlib : ValueSource<String, ValueSourceParameters.None> {
