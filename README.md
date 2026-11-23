@@ -11,7 +11,14 @@ Needs Android 11 or newer on ARM (64 or 32 bit).
 
 ## Installing
 
-Download [`redlib-android.apk`](https://github.com/Nachtalb/redlib-android/releases/latest/download/redlib-android.apk) from the [`latest` release](https://github.com/Nachtalb/redlib-android/releases/latest) and open it on the phone. The release is rebuilt on every push to `main`; a newer APK installs over the old one.
+Download [`redlib-android.apk`](https://github.com/Nachtalb/redlib-android/releases/latest/download/redlib-android.apk) from the [newest release](https://github.com/Nachtalb/redlib-android/releases/latest) and open it on the phone.
+
+After that the app updates itself: once a day, when it starts or comes back to the front, it checks the newest release and offers a newer version, downloads it with Android's download manager and installs it over the old one. Android asks once to allow Redlib to install apps. On Samsung phones, Auto Blocker stops the update; the app then opens Auto Blocker's screen and installs once you come back. Builds from before 0.2.0 have no updater: install 0.2.0 or newer by hand once.
+
+## Releases
+
+A release (`<app version>-<Redlib version>`, e.g. `0.2.0-2026.1123.1`) happens when `appVersion` in `build.gradle.kts` is bumped; other pushes only build and test.
+A new [Redlib release](https://github.com/Nachtalb/redlib/releases/latest) is picked up by a nightly check, which GitHub pauses after 60 days without activity in the repository (turn it back on under Actions).
 
 ## Building
 
@@ -19,7 +26,7 @@ Download [`redlib-android.apk`](https://github.com/Nachtalb/redlib-android/relea
 ./gradlew assembleRelease   # build/outputs/apk/release/redlib-android-release.apk
 ```
 
-The build downloads Redlib's Android binaries from the [`latest` release](https://github.com/Nachtalb/redlib/releases/latest) of the fork; `./gradlew clean` makes the next build fetch them again. To build with other binaries, pass `-PredlibDir=<folder>` holding `redlib-aarch64-linux-android` and `redlib-armv7-linux-androideabi`.
+The build downloads Redlib's Android binaries from the [newest release](https://github.com/Nachtalb/redlib/releases/latest) of the fork, and fetches them again when there is a newer one. To build with other binaries, pass `-PredlibDir=<folder>` holding `redlib-aarch64-linux-android` and `redlib-armv7-linux-androideabi` (the version then ends in `-local`). Local builds have versionCode 1 and never offer updates.
 
 ## License
 
