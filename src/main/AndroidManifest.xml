@@ -7,6 +7,8 @@
 
     <!-- To find the browser that links leaving Redlib open in. -->
     <queries>
+        <!-- Samsung's Auto Blocker, which stops the app updating itself. -->
+        <package android:name="com.samsung.android.rampart" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <category android:name="android.intent.category.BROWSABLE" />

@@ -1,5 +1,6 @@
 package io.nachtalb.redlib
 
+import android.content.pm.PackageInstaller
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -25,5 +26,16 @@ class UpdateTest {
         assertNull(Update.newer("""{"versionCode": "seven", "versionName": "0.2.0"}""", 6))
         assertNull(Update.newer("""{"versionName": "0.2.0"}""", 6))
         assertNull(Update.newer("""{"versionCode": 7}""", 6))
+    }
+
+    @Test
+    fun failure() {
+        val aborted = PackageInstaller.STATUS_FAILURE_ABORTED
+        assertEquals(Update.Failure.AutoBlocker, Update.failure(aborted, "INSTALL_FAILED_ABORTED: Self update is blocked", false))
+        assertEquals(Update.Failure.AutoBlocker, Update.failure(PackageInstaller.STATUS_FAILURE, "INSTALL_FAILED_ABORTED: Self update is blocked", false))
+        assertEquals(Update.Failure.AutoBlocker, Update.failure(aborted, "INSTALL_FAILED_ABORTED", true))
+        assertEquals(Update.Failure.UserCancelled, Update.failure(aborted, "INSTALL_FAILED_ABORTED", false))
+        assertEquals(Update.Failure.UserCancelled, Update.failure(aborted, "INSTALL_FAILED_ABORTED: User rejected permissions", true))
+        assertEquals(Update.Failure.Other, Update.failure(PackageInstaller.STATUS_FAILURE_CONFLICT, "INSTALL_FAILED_UPDATE_INCOMPATIBLE", true))
     }
 }

@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.app.DownloadManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -26,6 +27,7 @@ class Updater(private val activity: Activity) {
         const val STATUS = "io.nachtalb.redlib.INSTALL_STATUS"
         private const val RELEASE = "https://github.com/Nachtalb/redlib-android/releases/latest/download"
         private const val APK = "redlib-update.apk"
+        private const val AUTO_BLOCKER = "com.samsung.android.rampart"
         private const val DAY = 24 * 60 * 60 * 1000L
     }
 
@@ -167,8 +169,31 @@ class Updater(private val activity: Activity) {
         when (status) {
             PackageInstaller.STATUS_SUCCESS -> Unit
             PackageInstaller.STATUS_PENDING_USER_ACTION -> intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)?.let(activity::startActivity)
-            else -> toast("Update install failed: $message")
+            else -> when (Update.failure(status, message, autoBlockerInstalled())) {
+                Update.Failure.AutoBlocker -> autoBlocker()
+                Update.Failure.UserCancelled -> Unit
+                Update.Failure.Other -> toast("Update install failed: $message")
+            }
         }
+    }
+
+    private fun autoBlockerInstalled() = runCatching { activity.packageManager.getPackageInfo(AUTO_BLOCKER, 0) }.isSuccess
+
+    /** Samsung's Auto Blocker stops self-updates: offer its screen, and install again on the way back. */
+    private fun autoBlocker() {
+        AlertDialog.Builder(activity)
+            .setTitle("Auto Blocker is blocking the update")
+            .setMessage("Turn off Auto Blocker, then come back to install.")
+            .setPositiveButton("Open Auto Blocker") { _, _ ->
+                val screens = listOf(
+                    Intent().setComponent(ComponentName(AUTO_BLOCKER, "$AUTO_BLOCKER.ui.MainSettingActivity")),
+                    Intent(Settings.ACTION_SECURITY_SETTINGS),
+                    Intent(Settings.ACTION_SETTINGS),
+                )
+                if (screens.any { runCatching { activity.startActivity(it) }.isSuccess }) onReturn = ::install
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun toast(text: String) = activity.runOnUiThread { Toast.makeText(activity, text, Toast.LENGTH_LONG).show() }
