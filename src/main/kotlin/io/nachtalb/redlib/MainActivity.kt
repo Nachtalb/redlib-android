@@ -326,7 +326,7 @@ class MainActivity : Activity() {
     private fun toast(text: String) = runOnUiThread { Toast.makeText(this, text, Toast.LENGTH_SHORT).show() }
 
     /** The local address for the link the app was opened with, the front page without one. */
-    private fun page(intent: Intent?) = Redlib.BASE + Links.page(intent?.data?.encodedPath, intent?.data?.encodedQuery)
+    private fun page(intent: Intent?) = Redlib.BASE + Links.fromOutside(intent?.data?.encodedPath, intent?.data?.encodedQuery)
 
     /** Runs `load` once the server answers, starting it if needed. */
     private fun open(started: Boolean = Redlib.start(this), load: () -> Unit) {

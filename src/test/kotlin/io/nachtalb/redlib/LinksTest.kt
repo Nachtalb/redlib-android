@@ -16,6 +16,16 @@ class LinksTest {
     }
 
     @Test
+    fun fromOutside() {
+        assertEquals("/r/rust/comments/abc/t/?sort=new", Links.fromOutside("/r/rust/comments/abc/t/", "sort=new"))
+        assertEquals("/", Links.fromOutside(null, null))
+        assertEquals("/settings", Links.fromOutside("/settings", null))
+        // These change settings by being opened.
+        assertEquals("/settings", Links.fromOutside("/settings/restore/", "theme=x&share_link=example.org"))
+        assertEquals("/settings", Links.fromOutside("/settings/update", "show_nsfw=on&redirect=r/rust"))
+    }
+
+    @Test
     fun media() {
         assertTrue(Links.isMedia("/img/a.jpg"))
         assertTrue(Links.isMedia("/preview/pre/a.jpg"))

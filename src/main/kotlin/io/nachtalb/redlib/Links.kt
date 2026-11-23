@@ -20,6 +20,13 @@ object Links {
     /** The Redlib path for the path and query of a reddit.com or redd.it link. */
     fun page(path: String?, query: String?) = (path?.ifEmpty { null } ?: "/") + (query?.let { "?$it" } ?: "")
 
+    /**
+     * The Redlib path for a link another app or a web page opened the app with. Redlib's
+     * `/settings/restore` and `/settings/update` change settings just by being opened, so such a link
+     * only gets the settings page.
+     */
+    fun fromOutside(path: String?, query: String?) = if (path.orEmpty().startsWith("/settings/")) "/settings" else page(path, query)
+
     /** Whether a Redlib path is proxied media rather than a page. */
     fun isMedia(path: String) = path.split('/').getOrNull(1) in media
 
