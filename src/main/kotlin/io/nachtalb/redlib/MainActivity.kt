@@ -3,7 +3,6 @@ package io.nachtalb.redlib
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.DownloadManager
-import android.content.ActivityNotFoundException
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -68,15 +67,30 @@ object Redlib {
         process = null
     }
 
-    /** Waits until the server answers. False when it exited or took over a minute. */
-    fun awaitReady(): Boolean {
+    private fun answers() = try {
+        val connection = URL("$BASE/healthz").openConnection() as HttpURLConnection
+        connection.connectTimeout = 500
+        connection.responseCode == 200
+    } catch (_: Exception) {
+        false
+    }
+
+    /** Whether this app's own server listens: it runs, and its log doesn't say that the port was taken. */
+    private fun listens(context: Context) = process?.isAlive == true && Links.listening(runCatching { log(context).readText() }.getOrDefault(""))
+
+    /**
+     * Waits until the server answers. False when it exited or took over a minute.
+     *
+     * Any app can listen on the port first and answer in the server's place; the server then
+     * fails to bind and exits. So an answer only counts once the log shows the server got as far as
+     * binding, and it still runs a moment later.
+     */
+    fun awaitReady(context: Context): Boolean {
         repeat(300) {
             if (process?.isAlive != true) return false
-            try {
-                val connection = URL("$BASE/healthz").openConnection() as HttpURLConnection
-                connection.connectTimeout = 500
-                if (connection.responseCode == 200) return true
-            } catch (_: Exception) {
+            if (listens(context) && answers()) {
+                Thread.sleep(300)
+                return listens(context)
             }
             Thread.sleep(200)
         }
@@ -231,8 +245,9 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        // Android may have killed the server in the background. The page on screen stays as it is.
-        Redlib.start(this)
+        // Android may have killed the server in the background. The page on screen stays as it is,
+        // unless the new server can't start: then whatever answers on its port isn't Redlib.
+        if (Redlib.start(this)) thread { if (!Redlib.awaitReady(this)) runOnUiThread { failed() } }
         updater.resume()
     }
 
@@ -326,7 +341,7 @@ class MainActivity : Activity() {
     private fun toast(text: String) = runOnUiThread { Toast.makeText(this, text, Toast.LENGTH_SHORT).show() }
 
     /** The local address for the link the app was opened with, the front page without one. */
-    private fun page(intent: Intent?) = Redlib.BASE + Links.page(intent?.data?.encodedPath, intent?.data?.encodedQuery)
+    private fun page(intent: Intent?) = Redlib.BASE + Links.fromOutside(intent?.data?.encodedPath, intent?.data?.encodedQuery)
 
     /** Runs `load` once the server answers, starting it if needed. */
     private fun open(started: Boolean = Redlib.start(this), load: () -> Unit) {
@@ -334,14 +349,17 @@ class MainActivity : Activity() {
         progress.visibility = if (started) View.VISIBLE else View.GONE
         if (!started) return load()
         thread {
-            val ready = Redlib.awaitReady()
-            runOnUiThread {
-                if (ready) return@runOnUiThread load()
-                progress.visibility = View.GONE
-                error.text = "Redlib did not start.\n\n" + Redlib.log(this).takeIf { it.exists() }?.readText().orEmpty().takeLast(4000)
-                error.visibility = View.VISIBLE
-            }
+            val ready = Redlib.awaitReady(this)
+            runOnUiThread { if (ready) load() else failed() }
         }
+    }
+
+    /** Shows why the server did not start, in place of the page: nothing on its port is to be trusted then. */
+    private fun failed() {
+        web.loadUrl("about:blank")
+        progress.visibility = View.GONE
+        error.text = "Redlib did not start.\n\n" + Redlib.log(this).takeIf { it.exists() }?.readText().orEmpty().takeLast(4000)
+        error.visibility = View.VISIBLE
     }
 
     /** Opens a link in the browser, never in this app, which handles reddit.com links itself. */
@@ -352,10 +370,14 @@ class MainActivity : Activity() {
             val preferred = packageManager.resolveActivity(probe, PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
             val browsers = packageManager.queryIntentActivities(probe, PackageManager.MATCH_ALL).map { it.activityInfo.packageName }
             intent.setPackage(preferred?.takeIf { it in browsers && it != packageName } ?: browsers.firstOrNull { it != packageName })
+        } else {
+            // Like a browser: only what an app offers to links on web pages.
+            intent.addCategory(Intent.CATEGORY_BROWSABLE)
         }
         try {
             startActivity(intent)
-        } catch (_: ActivityNotFoundException) {
+        } catch (_: Exception) {
+            // No app for it, or an address Android refuses to hand on, such as file:.
             Toast.makeText(this, "No app opens this link", Toast.LENGTH_SHORT).show()
         }
     }

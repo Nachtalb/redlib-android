@@ -17,6 +17,9 @@ object Update {
         return Offer(code, name).takeIf { code > installed }
     }
 
+    /** Whether an install result carries the secret its install was started with. */
+    fun trusted(token: String?, expected: String?) = token != null && token == expected
+
     /** Why an install failed, read as AnyFile does: Samsung's Auto Blocker aborts self-updates. */
     fun failure(status: Int, message: String?, autoBlockerInstalled: Boolean): Failure {
         val m = message.orEmpty().lowercase()

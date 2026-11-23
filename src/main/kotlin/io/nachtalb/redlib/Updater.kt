@@ -18,6 +18,7 @@ import android.widget.Toast
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.UUID
 import kotlin.concurrent.thread
 
 /** Offers the newest published build once a day, downloads it with the download manager and installs it. */
@@ -25,6 +26,9 @@ class Updater(private val activity: Activity) {
     companion object {
         /** The action of the intent bringing an install's result back to the activity. */
         const val STATUS = "io.nachtalb.redlib.INSTALL_STATUS"
+
+        /** The extra carrying the secret of the install the result is for. */
+        private const val TOKEN = "token"
         private const val RELEASE = "https://github.com/Nachtalb/redlib-android/releases/latest/download"
         private const val APK = "redlib-update.apk"
         private const val AUTO_BLOCKER = "com.samsung.android.rampart"
@@ -152,7 +156,10 @@ class Updater(private val activity: Activity) {
                         apk.inputStream().use { it.copyTo(out) }
                         session.fsync(out)
                     }
-                    val result = Intent(activity, activity.javaClass).setAction(STATUS)
+                    // The activity is open to other apps: only a result carrying this install's secret is the installer's.
+                    val token = UUID.randomUUID().toString()
+                    prefs.edit().putString(TOKEN, token).apply()
+                    val result = Intent(activity, activity.javaClass).setAction(STATUS).putExtra(TOKEN, token)
                     session.commit(PendingIntent.getActivity(activity, id, result, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE).intentSender)
                 }
             } catch (e: Exception) {
@@ -164,6 +171,8 @@ class Updater(private val activity: Activity) {
     /** The installer's answer, delivered to the activity as an intent with [STATUS]. */
     @Suppress("DEPRECATION")
     fun status(intent: Intent) {
+        // Anything else is another app's intent, which could have this app start an activity of its choosing.
+        if (!Update.trusted(intent.getStringExtra(TOKEN), prefs.getString(TOKEN, null))) return
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
         when (status) {

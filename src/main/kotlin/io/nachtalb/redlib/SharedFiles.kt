@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import java.io.File
+import java.io.FileNotFoundException
 import java.net.URLConnection
 
 /** Hands the files in the cache's share folder to the app the user shares them with. */
@@ -17,9 +18,12 @@ class SharedFiles : ContentProvider() {
         fun dir(context: Context) = File(context.cacheDir, "share")
 
         fun uri(file: File): Uri = Uri.parse("content://io.nachtalb.redlib.share/").buildUpon().appendPath(file.name).build()
+
+        /** The file `name` in `dir`, null when the name leads out of it: the name comes from the address, which the asking app writes. */
+        fun inside(dir: File, name: String?): File? = name?.let { File(dir, it) }?.takeIf { it.canonicalFile.parentFile == dir.canonicalFile }
     }
 
-    private fun file(uri: Uri) = File(dir(context!!), uri.lastPathSegment!!)
+    private fun file(uri: Uri) = inside(dir(context!!), uri.lastPathSegment) ?: throw FileNotFoundException("$uri")
 
     override fun onCreate() = true
 
